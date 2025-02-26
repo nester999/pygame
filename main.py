@@ -2,6 +2,7 @@ import pygame
 import sys
 import math
 from os import path
+import importlib
 
 # Initialize Pygame
 pygame.init()
@@ -13,7 +14,23 @@ for i in range(pygame.joystick.get_count()):
     joystick = pygame.joystick.Joystick(i)
     joystick.init()
     joysticks.append(joystick)
-    print(f"Found gamepad: {joystick.get_name()}")
+    print(f"\nGamepad Details:")
+    print(f"Name: {joystick.get_name()}")
+    print(f"Number of axes: {joystick.get_numaxes()}")
+    print(f"Number of buttons: {joystick.get_numbuttons()}")
+    print(f"Number of hats: {joystick.get_numhats()}")
+    
+    print("\nInitial Axis States:")
+    for j in range(joystick.get_numaxes()):
+        print(f"Axis {j} value: {joystick.get_axis(j)}")
+        
+    print("\nInitial Hat States:")
+    for j in range(joystick.get_numhats()):
+        try:
+            hat_value = joystick.get_hat(j)
+            print(f"Hat {j} value: {hat_value}")
+        except pygame.error as e:
+            print(f"Error reading hat {j}: {e}")
 
 # Screen dimensions
 SCREEN_WIDTH = 800
@@ -204,133 +221,272 @@ platform_image = load_platform_image()
 # Add after other image initializations
 background_image = load_background()
 
-# Main game loop
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+def reload_game():
+    global player_x, player_y, player_velocity_y, jumps_remaining
+    global dash_time_remaining, last_left_tap, last_right_tap, walk_cycle
+    global was_left_pressed, was_right_pressed, was_space_pressed, player_direction
+    global screen, robot_images, platform_image, background_image
+    
+    # Reset game state
+    player_x = SCREEN_WIDTH // 2
+    player_y = SCREEN_HEIGHT - player_size
+    player_velocity_y = 0
+    jumps_remaining = max_jumps
+    dash_time_remaining = 0
+    last_left_tap = 0
+    last_right_tap = 0
+    walk_cycle = 0
+    was_left_pressed = False
+    was_right_pressed = False
+    was_space_pressed = False
+    player_direction = "right"
+    
+    # Reinitialize the screen
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Simple Platformer")
+    
+    # Reload images
+    robot_images = load_robot_images()
+    platform_image = load_platform_image()
+    background_image = load_background()
+    
+    print("Game state reset!")
 
-    # Create player rect once
-    player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+def main():
+    global screen, clock, player_x, player_y, player_velocity_y, jumps_remaining
+    global dash_time_remaining, last_left_tap, last_right_tap, walk_cycle
+    global robot_images, platform_image, background_image
+    global was_left_pressed, was_right_pressed, was_space_pressed, player_direction
     
-    # Key presses and gamepad input
-    keys = pygame.key.get_pressed()
-    moving = False
-    current_time = pygame.time.get_ticks()
-    
-    # Handle dashing
-    if dash_time_remaining > 0:
-        # Continue ongoing dash
-        if dash_direction == "left":
-            player_x -= DASH_SPEED
-        else:
-            player_x += DASH_SPEED
-        dash_time_remaining -= 1
-        moving = True
-    else:
-        # Get gamepad input for movement (if any gamepad is connected)
-        gamepad_x = 0
-        if joysticks:
-            gamepad_x = joysticks[0].get_axis(0)  # Left stick X axis
-            # Add a small deadzone to prevent drift
-            if abs(gamepad_x) < 0.2:
-                gamepad_x = 0
+    # Initialize Pygame
+    pygame.init()
+
+    # Initialize game controllers
+    pygame.joystick.init()
+    joysticks = []
+    for i in range(pygame.joystick.get_count()):
+        joystick = pygame.joystick.Joystick(i)
+        joystick.init()
+        joysticks.append(joystick)
+        print(f"\nGamepad Details:")
+        print(f"Name: {joystick.get_name()}")
+        print(f"Number of axes: {joystick.get_numaxes()}")
+        print(f"Number of buttons: {joystick.get_numbuttons()}")
+        print(f"Number of hats: {joystick.get_numhats()}")
         
-        # Combine keyboard and gamepad input
-        if keys[pygame.K_LEFT] or gamepad_x < -0.2:
-            if not was_left_pressed:  # Key/stick just pressed
-                if current_time - last_left_tap < DOUBLE_TAP_TIME:
-                    # Start dash
-                    dash_direction = "left"
-                    dash_time_remaining = DASH_DURATION
-                last_left_tap = current_time
-            if not dash_time_remaining:  # Normal movement if not dashing
-                player_x -= player_speed
-            player_direction = "left"
+        print("\nInitial Axis States:")
+        for j in range(joystick.get_numaxes()):
+            print(f"Axis {j} value: {joystick.get_axis(j)}")
+            
+        print("\nInitial Hat States:")
+        for j in range(joystick.get_numhats()):
+            try:
+                hat_value = joystick.get_hat(j)
+                print(f"Hat {j} value: {hat_value}")
+            except pygame.error as e:
+                print(f"Error reading hat {j}: {e}")
+
+    # Reset these variables to initial values
+    player_x = SCREEN_WIDTH // 2
+    player_y = SCREEN_HEIGHT - player_size
+    player_velocity_y = 0
+    jumps_remaining = max_jumps
+    dash_time_remaining = 0
+    last_left_tap = 0
+    last_right_tap = 0
+    walk_cycle = 0
+    was_left_pressed = False
+    was_right_pressed = False
+    was_space_pressed = False
+    player_direction = "right"
+
+    # Screen setup
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Simple Platformer")
+    
+    # Initialize images
+    robot_images = load_robot_images()
+    platform_image = load_platform_image()
+    background_image = load_background()
+    
+    # Clock for controlling the frame rate
+    clock = pygame.time.Clock()
+    
+    # Main game loop
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            # Add hot reload with CTRL+R
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r and (event.mod & pygame.KMOD_CTRL):
+                    print("Hot reloading game...")
+                    reload_game()
+                    continue  # Continue the game loop instead of returning
+
+        # Create player rect once
+        player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+        
+        # Key presses and gamepad input
+        keys = pygame.key.get_pressed()
+        print(f'keys {keys}')
+        moving = False
+        current_time = pygame.time.get_ticks()
+        
+        # Handle dashing
+        if dash_time_remaining > 0:
+            # Continue ongoing dash
+            if dash_direction == "left":
+                player_x -= DASH_SPEED
+            else:
+                player_x += DASH_SPEED
+            dash_time_remaining -= 1
             moving = True
-            was_left_pressed = True
         else:
-            was_left_pressed = False
+            # Get gamepad input for movement (if any gamepad is connected)
+            gamepad_x = 0
+            if joysticks:
+                joystick = joysticks[0]
+                
+                # Get analog stick input (usually axis 0)
+                gamepad_x = joystick.get_axis(0)  # Left stick X axis
+                print(f"Raw analog X: {gamepad_x}")
+                
+                # Add deadzone to analog input
+                if abs(gamepad_x) < 0.2:
+                    gamepad_x = 0
+                
+                print(f"Final gamepad_x: {gamepad_x}")
+            
+            # Combine keyboard and gamepad input
+            dpad_left = joysticks and joysticks[0].get_button(13)
+            dpad_right = joysticks and joysticks[0].get_button(14)
+            print(f'DPAD LEFT {dpad_left}')
+            print(f'DPAD RIGHT {dpad_right}')
+            
+            # Log any button that is currently pressed
+            joystick = joysticks[0]
+            for i in range(joystick.get_numbuttons()):
+                if joystick.get_button(i):
+                    print(f"Button {i} is pressed")
+            
+            # Debug left movement condition
+            left_condition = (keys[pygame.K_LEFT] or gamepad_x < -0.2 or dpad_left)
+            print(f"Left movement condition: {left_condition} (keyboard: {keys[pygame.K_LEFT]}, analog: {gamepad_x < -0.2}, dpad: {dpad_left})")
+            
+            if left_condition and not keys[pygame.K_RIGHT]:
+                if not was_left_pressed:  # Key/stick just pressed
+                    print("Left press detected - was_left_pressed is now True")
+                    if current_time - last_left_tap < DOUBLE_TAP_TIME:
+                        # Start dash
+                        dash_direction = "left"
+                        dash_time_remaining = DASH_DURATION
+                    last_left_tap = current_time
+                if not dash_time_remaining:  # Normal movement if not dashing
+                    player_x -= player_speed
+                player_direction = "left"
+                moving = True
+                was_left_pressed = True
+            else:
+                was_left_pressed = False
 
-        if keys[pygame.K_RIGHT] or gamepad_x > 0.2:
-            if not was_right_pressed:  # Key/stick just pressed
-                if current_time - last_right_tap < DOUBLE_TAP_TIME:
-                    # Start dash
-                    dash_direction = "right"
-                    dash_time_remaining = DASH_DURATION
-                last_right_tap = current_time
-            if not dash_time_remaining:  # Normal movement if not dashing
-                player_x += player_speed
-            player_direction = "right"
-            moving = True
-            was_right_pressed = True
+            if (keys[pygame.K_RIGHT] or gamepad_x > 0.2 or dpad_right) and not keys[pygame.K_LEFT]:
+                if not was_right_pressed:  # Key/stick just pressed
+                    if current_time - last_right_tap < DOUBLE_TAP_TIME:
+                        # Start dash
+                        dash_direction = "right"
+                        dash_time_remaining = DASH_DURATION
+                    last_right_tap = current_time
+                if not dash_time_remaining:  # Normal movement if not dashing
+                    player_x += player_speed
+                player_direction = "right"
+                moving = True
+                was_right_pressed = True
+            else:
+                was_right_pressed = False
+
+        # Update jump controls to include gamepad button
+        button_pressed = False
+        if joysticks:
+            joystick = joysticks[0]
+            # Check main jump button (X/Cross on DualSense)
+            button_pressed = joystick.get_button(0)
+            
+            # Check DualSense D-pad Up (b12)
+            try:
+                if joystick.get_button(12):  # D-pad Up
+                    button_pressed = True
+                    print("DualSense D-pad Up pressed")
+            except pygame.error as e:
+                print(f"Error reading D-pad up: {e}")
+        
+        if keys[pygame.K_SPACE] or button_pressed:
+            # Only jump if the key/button was just pressed (not held)
+            if not was_space_pressed and jumps_remaining > 0:
+                player_velocity_y = -player_jump
+                jumps_remaining -= 1
+            was_space_pressed = True
         else:
-            was_right_pressed = False
+            was_space_pressed = False
 
-    # Update jump controls to include gamepad button
-    button_pressed = False
-    if joysticks:
-        button_pressed = joysticks[0].get_button(0)  # First button (usually B1/A)
-    
-    if keys[pygame.K_SPACE] or button_pressed:
-        # Only jump if the key/button was just pressed (not held)
-        if not was_space_pressed and jumps_remaining > 0:
-            player_velocity_y = -player_jump
-            jumps_remaining -= 1
-        was_space_pressed = True
-    else:
-        was_space_pressed = False
+        # Apply gravity
+        player_velocity_y += gravity
+        player_y += player_velocity_y
 
-    # Apply gravity
-    player_velocity_y += gravity
-    player_y += player_velocity_y
+        # Update player rect position
+        player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
 
-    # Update player rect position
-    player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+        # Screen boundaries
+        if player_x < 0:
+            player_x = 0
+        elif player_x > SCREEN_WIDTH - player_size:
+            player_x = SCREEN_WIDTH - player_size
 
-    # Check for collisions and jumping
-    can_jump = False
-    
-    # Ground collision
-    if player_y >= SCREEN_HEIGHT - player_size:
-        player_y = SCREEN_HEIGHT - player_size
-        player_velocity_y = 0
-        jumps_remaining = max_jumps  # Reset jumps when hitting ground
-        can_jump = True
+        # Check for collisions and jumping
+        can_jump = False
+        
+        # Ground collision
+        if player_y >= SCREEN_HEIGHT - player_size:
+            player_y = SCREEN_HEIGHT - player_size
+            player_velocity_y = 0
+            jumps_remaining = max_jumps  # Reset jumps when hitting ground
+            can_jump = True
 
-    # Platform collisions
-    for platform in platforms:
-        if player_rect.colliderect(platform):
-            if player_velocity_y > 0:  # Falling
-                player_y = platform.top - player_size
-                player_velocity_y = 0
-                jumps_remaining = max_jumps  # Reset jumps when landing on platform
-                can_jump = True
-                break
+        # Platform collisions
+        for platform in platforms:
+            if player_rect.colliderect(platform):
+                if player_velocity_y > 0:  # Falling
+                    player_y = platform.top - player_size
+                    player_velocity_y = 0
+                    jumps_remaining = max_jumps  # Reset jumps when landing on platform
+                    can_jump = True
+                    break
 
-    # Update walk cycle
-    if moving:
-        walk_cycle += WALK_CYCLE_SPEED
-    else:
-        walk_cycle = 0
-
-    # Draw background
-    draw_background()
-    
-    # Draw the platforms
-    for platform in platforms:
-        if platform_image is None:
-            pygame.draw.rect(screen, WHITE, platform)
+        # Update walk cycle
+        if moving:
+            walk_cycle += WALK_CYCLE_SPEED
         else:
-            screen.blit(platform_image, platform)
-    
-    # Draw the robot
-    draw_robot(screen, player_x, player_y, player_size, walk_cycle, player_direction)
+            walk_cycle = 0
 
-    # Update the display
-    pygame.display.flip()
+        # Draw background
+        draw_background()
+        
+        # Draw the platforms
+        for platform in platforms:
+            if platform_image is None:
+                pygame.draw.rect(screen, WHITE, platform)
+            else:
+                screen.blit(platform_image, platform)
+        
+        # Draw the robot
+        draw_robot(screen, player_x, player_y, player_size, walk_cycle, player_direction)
 
-    # Cap the frame rate
-    clock.tick(60)
+        # Update the display
+        pygame.display.flip()
+        clock.tick(60)
+
+# Add at the bottom of the file
+if __name__ == '__main__':
+    main()
